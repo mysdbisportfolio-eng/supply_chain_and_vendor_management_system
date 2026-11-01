@@ -9,29 +9,33 @@
 The Procure-to-Pay platform acts as the operational core connecting enterprise staff, external suppliers, banking networks, and event-driven enterprise service buses.
 
 ```mermaid
-C4Context
-    title System Context Diagram (C4 Level 1) - Procure-to-Pay Platform
+flowchart TD
+    subgraph Users["Enterprise Personas"]
+        BUYER["Procurement Officer<br/>(Orders, Negotiations, Forecasts)"]
+        INSPECTOR["Quality Inspector<br/>(AQL Inspections, Defect Logs, NCRs)"]
+        FINANCE["Finance Officer<br/>(3-Way Match, Approvals, Payment Orders)"]
+        VENDOR["Supplier Representative<br/>(Order Confirmations, Invoices)"]
+    end
 
-    Person(buyer, "Procurement Officer", "Creates purchase orders, negotiates pricing, tracks delivery progress.")
-    Person(inspector, "Quality Inspector", "Conducts ISO 2859-1 AQL inspections, logs defect counts, issues NCRs.")
-    Person(finance, "Finance Officer", "Approves invoices, validates 3-way matching, authorizes payment orders.")
-    Person(vendor, "Supplier Representative", "Receives POs, confirms delivery dates, provides commercial invoices.")
+    subgraph Core["Core Application Boundary"]
+        P2P["Procure-to-Pay (P2P) Core System<br/>(Spring Modulith Modular Monolith)"]
+    end
 
-    System(p2p, "Procure-to-Pay (P2P) Core System", "Orchestrates order commitments, quality inspections, accounts payable, and supplier evaluations.")
+    subgraph External["External Infrastructure & Banking"]
+        STRIPE["Stripe Banking Rail<br/>(Payment Intents & Webhooks)"]
+        RABBITMQ["RabbitMQ Message Broker<br/>(Enterprise Topic Exchange)"]
+        POSTGRES[("PostgreSQL 16 Database<br/>(ACID Persistence & Outbox)")]
+    end
 
-    System_Ext(stripe, "Stripe Banking Rail", "External payment infrastructure handling bank transfers and webhook callbacks.")
-    System_Ext(rabbitmq, "RabbitMQ Enterprise Broker", "Asynchronous message broker distributing integration domain events across the enterprise.")
-    SystemDb_Ext(postgres, "PostgreSQL Database", "ACID compliant relational database maintaining operational and audit event state.")
+    BUYER -->|"REST / JSON"| P2P
+    INSPECTOR -->|"REST / JSON"| P2P
+    FINANCE -->|"REST / JSON / XML"| P2P
+    VENDOR -->|"REST / JSON"| P2P
 
-    Rel(buyer, p2p, "Manages Orders & Forecasts", "REST / JSON")
-    Rel(inspector, p2p, "Records AQL Verdicts & NCRs", "REST / JSON")
-    Rel(finance, p2p, "Reconciles & Approves Payments", "REST / JSON / XML")
-    Rel(vendor, p2p, "Sends Invoices & Delivery Confirmations", "REST / JSON")
-
-    Rel(p2p, stripe, "Dispatches Payment Intents", "HTTPS / REST SDK")
-    Rel(stripe, p2p, "Delivers Webhook Callbacks", "HTTPS / HMAC Signed Webhook")
-    Rel(p2p, rabbitmq, "Publishes Domain Integration Events", "AMQP 0-9-1")
-    Rel(p2p, postgres, "Reads/Writes Operational & Outbox Data", "JDBC / JPA")
+    P2P -->|"Dispatches Payment Intents (HTTPS)"| STRIPE
+    STRIPE -->|"HMAC-SHA256 Webhook Callbacks"| P2P
+    P2P -->|"Publishes Domain Events (AMQP 0-9-1)"| RABBITMQ
+    P2P -->|"Reads & Writes Data (JPA / JDBC)"| POSTGRES
 ```
 
 ---
@@ -41,39 +45,45 @@ C4Context
 Within the monolithic runtime, logical boundaries partition duties into distinct execution components sharing a single JVM process while isolating operational concerns.
 
 ```mermaid
-C4Container
-    title Container Diagram (C4 Level 2) - Modular Monolith Runtime
+flowchart TD
+    subgraph Users["Enterprise Clients & Personas"]
+        USER["Enterprise User<br/>(Procurement, Quality, Finance)"]
+    end
 
-    Person(user, "Enterprise User", "Procurement, Quality, Finance")
+    subgraph Monolith["Supply Chain Monolith (JVM 21 - Modular Monolith)"]
+        WEB["REST Presentation Layer<br/>(Spring Web MVC - JSON & XML)"]
+        SECURITY["Security & Audit Layer<br/>(Zero-Trust RBAC & JurnalAuditService)"]
 
-    Container_Boundary(monolith, "Supply Chain Monolith (JVM 21)")
-        Container(web, "REST Presentation Layer", "Spring Web MVC", "Exposes JSON/XML endpoints, handles content negotiation, enforces JSR-380 validation.")
-        Container(security, "Security & Audit Filter", "Spring Security / RBAC", "Enforces Four-Eyes checks, logs access to shared_audit_log, verifies signatures.")
-        Container(comenzi_mod, "Comenzi Module", "Spring Modulith", "Manages purchase order lifecycle, lines, lots, and cascade cancellations.")
-        Container(calitate_mod, "Calitate Module", "Spring Modulith", "Manages supplier records, AQL inspections, NCRs, and monthly scorecards.")
-        Container(facturi_mod, "Facturi Module", "Spring Modulith", "Manages invoices, 3-way matching, NIR generation, and Stripe payment adapters.")
-        Container(outbox_disp, "Outbox Dispatcher", "Spring Task Scheduling", "Polls unpublished outbox events and dispatches to RabbitMQ topics.")
-    Container_Boundary_End()
+        subgraph Modules["Spring Modulith Bounded Contexts"]
+            COM["Comenzi Module<br/>(Purchase Orders & Deliveries)"]
+            CAL["Calitate Module<br/>(Suppliers, AQL & Scorecards)"]
+            FAC["Facturi Module<br/>(Invoices, 3-Way Match & Stripe)"]
+        end
 
-    ContainerDb(db, "Primary Relational Database", "PostgreSQL 16", "Stores normalized domain tables, indexes, outbox/inbox journals.")
-    Container(broker, "Enterprise Message Broker", "RabbitMQ 3.12", "Topic exchange routing to domain queues and dead-letter queue (DLQ).")
+        OUTBOX_DISP["Outbox Dispatcher<br/>(Scheduled Async Poller)"]
+    end
 
-    Rel(user, web, "Submits Requests", "HTTPS")
-    Rel(web, security, "Filters & Audits", "In-Process")
-    Rel(security, comenzi_mod, "Routes Requests", "In-Process Call")
-    Rel(security, calitate_mod, "Routes Requests", "In-Process Call")
-    Rel(security, facturi_mod, "Routes Requests", "In-Process Call")
+    subgraph StorageAndMessaging["Enterprise Infrastructure"]
+        DB[("PostgreSQL 16 Database<br/>(Tables, Outbox & Audit Logs)")]
+        BROKER["RabbitMQ 3.12 Broker<br/>(Topic Exchange & DLQ)"]
+    end
 
-    Rel(comenzi_mod, db, "Persists State", "Spring Data JPA")
-    Rel(calitate_mod, db, "Persists State", "Spring Data JPA")
-    Rel(facturi_mod, db, "Persists State", "Spring Data JPA")
+    USER -->|"HTTPS / REST"| WEB
+    WEB -->|"In-Process"| SECURITY
+    SECURITY -->|"Dispatches"| COM
+    SECURITY -->|"Dispatches"| CAL
+    SECURITY -->|"Dispatches"| FAC
 
-    Rel(comenzi_mod, db, "Saves Events", "shared_outbox")
-    Rel(calitate_mod, db, "Saves Events", "shared_outbox")
-    Rel(facturi_mod, db, "Saves Events", "shared_outbox")
+    COM -->|"Spring Data JPA"| DB
+    CAL -->|"Spring Data JPA"| DB
+    FAC -->|"Spring Data JPA"| DB
 
-    Rel(outbox_disp, db, "Polls Unpublished", "JDBC")
-    Rel(outbox_disp, broker, "Publishes AMQP Messages", "AMQP 0-9-1")
+    COM -.->|"Saves Events"| DB
+    CAL -.->|"Saves Events"| DB
+    FAC -.->|"Saves Events"| DB
+
+    OUTBOX_DISP -->|"Polls Unpublished Events"| DB
+    OUTBOX_DISP -->|"Publishes AMQP Messages"| BROKER
 ```
 
 ---

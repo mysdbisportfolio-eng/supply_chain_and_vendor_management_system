@@ -36,9 +36,9 @@ graph TD
     STRIPE_GW --> LB
     EXTERNAL_API --> LB
 
-    LB -->|HTTP Forward (Port 8080)| APP
-    APP -->|JDBC Connection Pool (HikariCP)| DB
-    APP -->|AMQP 0-9-1 Protocol| MQ
+    LB -->|"HTTP Forward - Port 8080"| APP
+    APP -->|"JDBC Connection Pool - HikariCP"| DB
+    APP -->|"AMQP 0-9-1 Protocol"| MQ
 ```
 
 ---

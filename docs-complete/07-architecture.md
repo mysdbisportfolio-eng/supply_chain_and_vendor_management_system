@@ -134,7 +134,7 @@ sequenceDiagram
     Sec-->>Web: Signature Verified OK
     Web->>App: inregistreazaExecutiePlata(ordinId)
     App->>Dom: ordin.inregistreazaExecutie()
-    Dom->>Dom: state = Executat; generate PlataExecutataEvent
+    Dom->>Dom: Set state = Executat and emit PlataExecutataEvent
     App->>DB: UPDATE facturi_ordine_plata SET stare_ordin='Executat'
     App->>Out: INSERT INTO shared_outbox (PlataExecutataPublicEvent)
     Note over DB,Out: Single ACID Commit (No Dual-Write Risk)
