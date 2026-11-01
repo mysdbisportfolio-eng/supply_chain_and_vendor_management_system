@@ -1,98 +1,76 @@
-# 13. COMPLETE REST API REFERENCE CATALOG
+# 13. COMPLETE REST API REFERENCE CATALOG & ENDPOINT MATRIX
 **System:** Enterprise Procure-to-Pay (P2P) Supply Chain Modular Monolith  
 **Namespace:** `ro.uaic.feaa.sdbis.supplychain`
 
 ---
 
-## 1. COMENZI MODULE ENDPOINTS (`ComandaCtrl`)
+## 1. COMPREHENSIVE ENDPOINT MATRIX
 
-### 1.1 Create Purchase Order
-- **Method & URI:** `POST /api/comenzi`
-- **Consumes:** `application/json`, `application/xml`
-- **Produces:** `application/json`, `application/xml`
-- **Request Body:** [CreeazaComandaRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/comenzi/presentation/CreeazaComandaRequest.java)
-- **Validation Rules:** `@NotBlank numarComanda`, `@NotNull furnizorId`, `@NotNull @FutureOrPresent dataLivrareCeruta`, `@NotBlank depozit`, `@NotEmpty @Valid linii`.
-- **Responses:**
-  - `201 Created`: `{"comandaId": "UUID", "numarComanda": "PO-2026-001", "status": "Solicitat"}`
-  - `400 Bad Request`: Validation failure.
-  - `422 Unprocessable Entity`: Supplier ineligible (blocked or candidate).
-- **Security:** Requires `ROLE_CUMPARATOR` or `ROLE_ADMIN`.
-
-### 1.2 Confirm Purchase Order Delivery Date
-- **Method & URI:** `POST /api/comenzi/{id}/confirmare`
-- **Parameters:** Path variable `id` (UUID), Query param `dataPromisa` (ISO Date string).
-- **Responses:** `200 OK`, `400 Bad Request`.
-- **Side Effects:** Transitions order to `Confirmat`; evaluates lead time deviation.
-
-### 1.3 Atomic Cascade Cancellation
-- **Method & URI:** `POST /api/comenzi/{id}/anulare`
-- **Responses:** `200 OK`, `400 Bad Request`.
-- **Side Effects:** Order status becomes `Anulat`; uninspected lots transitioned to `Anulat`; publishes `ComandaAnulataPublicEvent`.
-
-### 1.4 Lead Time Estimation Calculation
-- **Method & URI:** `GET /api/comenzi/{id}/lead-time`
-- **Responses:** `200 OK`: `{"estimareZile": 14.5, "metoda": "LinearRegression"}`.
-- **SLA Target:** $<300\text{ ms}$ response time benchmark.
-
----
-
-## 2. CALITATE MODULE ENDPOINTS (`CalitateCtrl`)
-
-### 2.1 Register Candidate Supplier
-- **Method & URI:** `POST /api/furnizori`
-- **Consumes:** `application/json`, `application/x-www-form-urlencoded`
-- **Request DTO:** [InregistreazaFurnizorRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/calitate/presentation/InregistreazaFurnizorRequest.java)
-- **Validation Rules:** `@NotBlank @Size(2..30) codFiscal`, `@NotBlank @Size(2..255) denumire`, `@Pattern(IBAN) iban`, `@Email email`.
-- **Responses:** `201 Created` with generated `furnizorId`.
-
-### 2.2 Qualify Supplier
-- **Method & URI:** `POST /api/furnizori/{id}/calificare`
-- **Parameters:** Path `id`, Query `decizie` (`Aprobat`, `Conditionat`, `Respins`), Query `motiv`.
-- **Responses:** `200 OK`, `400 Bad Request`.
-
-### 2.3 Record ISO 2859-1 AQL Inspection Verdict
-- **Method & URI:** `POST /api/inspectii/{id}/verdict`
-- **Request DTO:** [InregistreazaVerdictRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/calitate/presentation/InregistreazaVerdictRequest.java)
-- **Validation Rules:** `@PositiveOrZero int defecteGasite`.
-- **Responses:** `200 OK`, `400 Bad Request`.
-- **Side Effects:** If defects $\ge Re$, transitions to `RESPINS`, opens `RaportNeconformitate`, updates supplier defect counts.
-
-### 2.4 Calculate Monthly Vendor Scorecard
-- **Method & URI:** `POST /api/furnizori/{id}/scorecard-lunar`
-- **Request DTO:** [CalculScorecardRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/calitate/presentation/CalculScorecardRequest.java)
-- **Validation Rules:** `@Min(2020) @Max(2050) an`, `@Min(1) @Max(12) luna`, `@DecimalMin("0.0") @DecimalMax("100.0") rataRespingere`.
-- **Responses:** `200 OK`, `400 Bad Request`.
+| Module | Method | URI Pattern | Controller | Request DTO / Parameters | Use Case | Business Rule | Authorization | Validation | Response Type |
+|---|---|---|---|---|---|---|---|---|---|
+| `comenzi` | `POST` | `/api/comenzi` | `ComandaCtrl` | `CreeazaComandaRequest` | UC-01: Creare Comandă | BR-PO-01, 02 | `ROLE_BUYER`, `ROLE_ADMIN` | `@Valid`, `@NotBlank`, `@NotEmpty` | `201 Created` (`IdComandaDTO`) |
+| `comenzi` | `PUT` | `/api/comenzi/{id}` | `ComandaCtrl` | `dataLivrareCeruta, depozit` | UC-02: Editare Comandă | BR-PO-01 | `ROLE_BUYER`, `ROLE_ADMIN` | Date $\ge$ Today | `200 OK` |
+| `comenzi` | `DELETE`| `/api/comenzi/{id}` | `ComandaCtrl` | Path `id` | UC-03: Ștergere Comandă | BR-PO-01 | `ROLE_BUYER`, `ROLE_ADMIN` | Only `Solicitat` | `204 No Content` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/trimitere` | `ComandaCtrl` | Path `id` | UC-04: Trimitere la Furnizor | BR-PO-02 | `ROLE_BUYER`, `ROLE_ADMIN` | Order is `Solicitat` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/confirmare`| `ComandaCtrl` | Query `dataPromisa` | UC-05: Confirmare Furnizor | BR-PO-02 | `ROLE_SUPPLIER`, `ROLE_ADMIN`| ISO Date format | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/refuz` | `ComandaCtrl` | Path `id` | UC-06: Refuz Furnizor | BR-PO-02 | `ROLE_SUPPLIER`, `ROLE_ADMIN`| Order is `Solicitat` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/expedieri` | `ComandaCtrl` | `transportator, awb, loturiIds` | UC-07: Expediere Loturi | BR-PO-03 | `ROLE_SUPPLIER`, `ROLE_ADMIN`| Valid AWB string | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/receptii` | `ComandaCtrl` | `lotId, cantitate` | UC-08: Recepție Marfă Lot | BR-PO-04 | `ROLE_WAREHOUSE_KEEPER` | `cantitate > 0` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/anulare` | `ComandaCtrl` | Path `id` | UC-09: Anulare în Cascadă | BR-PO-03 | `ROLE_BUYER`, `ROLE_ADMIN` | Order not `Finalizată` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/estimare-livrare`| `ComandaCtrl`| Path `id` | UC-10: Estimare Lead Time | SLA $<300\text{ms}$ | `ROLE_BUYER`, `ROLE_ADMIN` | Order exists | `200 OK` (`EstimareLivrareDTO`) |
+| `comenzi` | `POST` | `/api/comenzi/{id}/loturi` | `ComandaCtrl` | `codLot, materialCod, cantitate, productie, expirare` | UC-11: Planificare Lot | Lot Boundary | `ROLE_BUYER`, `ROLE_ADMIN` | `cantitate > 0`, dates | `201 Created` (`IdLotDTO`) |
+| `comenzi` | `POST` | `/api/comenzi/{id}/loturi/{lotId}/carantina` | `ComandaCtrl` | Path `id, lotId` | UC-12: Carantinare Lot | Quality Gate | `ROLE_QUALITY_INSPECTOR` | Lot is `SositInDepozit` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/loturi/{lotId}/verdict` | `ComandaCtrl` | Query `rezultat` | UC-13: Aplicare Verdict | BR-SQ-03 | `ROLE_QUALITY_INSPECTOR` | `CONFORM` / `NECONFORM` | `200 OK` |
+| `comenzi` | `POST` | `/api/comenzi/{id}/loturi/{lotId}/retur` | `ComandaCtrl` | Path `id, lotId` | UC-14: Retur Furnizor | Defect Mgmt | `ROLE_WAREHOUSE_KEEPER` | Lot is `Respins` | `200 OK` |
+| `comenzi` | `GET` | `/api/comenzi/loturi/{codLot}/trasabilitate` | `ComandaCtrl` | Path `codLot` | UC-15: Trasabilitate Lot | Traceability | `ROLE_BUYER`, `ROLE_ADMIN` | Non-empty code | `200 OK` (`TrasabilitateLotView`) |
+| `comenzi` | `GET` | `/api/comenzi/rapoarte/otif` | `ComandaCtrl` | Query `furnizorId` (optional) | UC-16: Dashboard OTIF | Metric Reporting | `ROLE_BUYER`, `ROLE_ADMIN` | Valid UUID if present | `200 OK` (`DashboardLivrariView`) |
+| `calitate`| `POST` | `/api/furnizori` | `CalitateCtrl` | `InregistreazaFurnizorRequest` | UC-17: Înregistrare Furnizor | BR-SQ-01 | `ROLE_QUALITY_INSPECTOR` | `@Valid`, `@NotBlank`, `@Email` | `201 Created` (`furnizorId`) |
+| `calitate`| `PUT` | `/api/furnizori/{id}` | `CalitateCtrl` | `denumire, iban` | UC-18: Actualizare Furnizor | Profile Mgmt | `ROLE_QUALITY_INSPECTOR` | Valid IBAN regex | `200 OK` |
+| `calitate`| `POST` | `/api/furnizori/{id}/calificare` | `CalitateCtrl` | `decizie, motiv` | UC-19: Calificare Furnizor | BR-SQ-01 | `ROLE_QUALITY_INSPECTOR` | `Aprobat` / `Conditionat` | `200 OK` |
+| `calitate`| `POST` | `/api/inspectori` | `CalitateCtrl` | `CreeazaInspectorRequest` | UC-20: Creare Inspector | Profile Mgmt | `ROLE_QUALITY_INSPECTOR` | `@Valid`, `@NotBlank` | `201 Created` (`inspectorId`) |
+| `calitate`| `POST` | `/api/inspectori/{id}/certificari` | `CalitateCtrl` | `denumire, dataExpirare` | UC-21: Adăugare Certificare | Certification | `ROLE_QUALITY_INSPECTOR` | Future expiry date | `200 OK` |
+| `calitate`| `POST` | `/api/inspectori/{id}/disponibilitate`| `CalitateCtrl` | `deLa, panaLa` | UC-22: Disponibilitate | Availability | `ROLE_QUALITY_INSPECTOR` | `panaLa >= deLa` | `200 OK` |
+| `calitate`| `POST` | `/api/inspectii/{id}/alocare` | `CalitateCtrl` | Query `inspectorId` | UC-23: Alocare Inspector | Certification Guard | `ROLE_QUALITY_INSPECTOR` | Certified on period | `200 OK` |
+| `calitate`| `POST` | `/api/inspectii/{id}/start` | `CalitateCtrl` | Path `id` | UC-24: Începere Inspecție | Certification Active | `ROLE_QUALITY_INSPECTOR` | Active cert on date | `200 OK` |
+| `calitate`| `POST` | `/api/inspectii/{id}/verdict` | `CalitateCtrl` | `InregistreazaVerdictRequest` | UC-25: Înregistrare Verdict | BR-SQ-03 | `ROLE_QUALITY_INSPECTOR` | `@PositiveOrZero int` | `200 OK` |
+| `calitate`| `POST` | `/api/inspectii/{id}/reinspectie` | `CalitateCtrl` | Path `id` | UC-26: Reinspecție Lot | Defect Handling | `ROLE_QUALITY_INSPECTOR` | Inspection is `Neconformă`| `200 OK` |
+| `calitate`| `POST` | `/api/ncr/{id}/cauza` | `CalitateCtrl` | Query `cauza` | UC-27: Analiză Cauză NCR | NCR Flow | `ROLE_QUALITY_INSPECTOR` | Non-blank string | `200 OK` |
+| `calitate`| `POST` | `/api/ncr/{id}/actiune` | `CalitateCtrl` | `InitiazaActiuneNCRRequest` | UC-28: Acțiune Corectivă | NCR Flow | `ROLE_QUALITY_INSPECTOR` | `@Valid`, `@NotBlank` | `200 OK` |
+| `calitate`| `POST` | `/api/ncr/{id}/verificare` | `CalitateCtrl` | Path `id` | UC-29: Verificare Acțiune NCR| NCR Flow | `ROLE_QUALITY_INSPECTOR` | Status `ActiuneInCurs` | `200 OK` |
+| `calitate`| `POST` | `/api/ncr/{id}/inchidere` | `CalitateCtrl` | Path `id` | UC-30: Închidere NCR | NCR Flow | `ROLE_QUALITY_INSPECTOR` | Status `Verificat` | `200 OK` |
+| `calitate`| `POST` | `/api/ncr/{id}/escaladare` | `CalitateCtrl` | Path `id` | UC-31: Escaladare NCR | NCR Flow | `ROLE_QUALITY_INSPECTOR` | Ineffective action | `200 OK` |
+| `calitate`| `POST` | `/api/furnizori/{id}/scorecard-lunar`| `CalitateCtrl` | `CalculScorecardRequest` | UC-32: Scorecard Lunar | BR-SQ-02 | `ROLE_ADMIN` | `@Valid`, `@Min`, `@Max` | `200 OK` (`ScorecardLunarDTO`) |
+| `calitate`| `GET` | `/api/furnizori/rapoarte/monitorizare`| `CalitateCtrl`| None | UC-33: Monitorizare Furnizori | Monitoring | `ROLE_QUALITY_INSPECTOR` | None | `200 OK` (`MonitorizareFurnizoriView`) |
+| `facturi` | `POST` | `/api/facturi` | `FacturaCtrl` | `InregistreazaFacturaRequest` | UC-34: Înregistrare Factură | Dual JSON/XML | `ROLE_ACCOUNTANT`, `ROLE_CFO`| `@Valid`, `@Positive`, `@NotBlank`| `201 Created` (`facturaId`) |
+| `facturi` | `POST` | `/api/facturi/{id}/contestare` | `FacturaCtrl` | Query `motiv` | UC-35: Contestare Factură | Discrepancy Flow | `ROLE_ACCOUNTANT` | Non-blank string | `200 OK` |
+| `facturi` | `POST` | `/api/facturi/{id}/reconciliere` | `FacturaCtrl` | Path `id` | UC-36: 3-Way Match | BR-FAC-01 | `ROLE_ACCOUNTANT`, `ROLE_CFO`| NIR exists | `200 OK` / `409 Conflict` |
+| `facturi` | `POST` | `/api/nir/{id}/contabilizare` | `FacturaCtrl` | Path `id` | UC-37: Contabilizare NIR | Accounting | `ROLE_ACCOUNTANT` | NIR is `Reconciliat` | `200 OK` |
+| `facturi` | `POST` | `/api/nir/{id}/stornare` | `FacturaCtrl` | Query `motiv` | UC-38: Stornare NIR | Accounting | `ROLE_ACCOUNTANT` | Non-blank string | `200 OK` |
+| `facturi` | `POST` | `/api/facturi/{id}/ordine-plata` | `FacturaCtrl` | `CreeazaOrdinPlataRequest` | UC-39: Creare Ordin Plată | BR-FAC-02 | `ROLE_ACCOUNTANT`, `ROLE_CFO`| `@Positive suma <= rest` | `201 Created` (`ordinId`) |
+| `facturi` | `POST` | `/api/ordine-plata/{id}/aprobare` | `FacturaCtrl` | Query `aprobatorId` | UC-40: Aprobare Four-Eyes | BR-FAC-03 | `ROLE_CFO`, `ROLE_ADMIN` | `aprobatorId != creatDe` | `200 OK` |
+| `facturi` | `POST` | `/api/ordine-plata/{id}/transmitere` | `FacturaCtrl` | Query `iban` | UC-41: Transmitere la Bancă | Stripe Gateway | `ROLE_ACCOUNTANT`, `ROLE_CFO`| Valid IBAN, Vendor unblocked | `200 OK` |
+| `facturi` | `POST` | `/api/ordine-plata/webhook-banca` | `FacturaCtrl` | Raw body + `Stripe-Signature`| UC-42: Stripe Webhook | SEC-WH-01 | Public (HMAC Verified) | HMAC-SHA256 & 300s drift | `200 OK` (`ordinId, status`) |
+| `facturi` | `GET` | `/api/facturi/scadente` | `FacturaCtrl` | None | UC-43: Scadențar Facturi | Treasury Forecast | `ROLE_ACCOUNTANT`, `ROLE_CFO`| None | `200 OK` (`List<FacturaScadentaView>`) |
 
 ---
 
-## 3. FACTURI MODULE ENDPOINTS (`FacturaCtrl`)
+## 2. API REQUEST PROCESSING & SECURITY PIPELINE
 
-### 3.1 Register Supplier Invoice
-- **Method & URI:** `POST /api/facturi`
-- **Consumes:** `application/json`, `application/x-www-form-urlencoded`
-- **Request DTO:** [InregistreazaFacturaRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/facturi/presentation/InregistreazaFacturaRequest.java)
-- **Validation Rules:** `@NotBlank serie`, `@NotBlank numar`, `@NotNull dataEmitere`, `@NotNull dataScadenta`, `@NotNull comandaId`, `@NotNull furnizorId`, `@Positive cantitate`, `@PositiveOrZero pretUnitar`, `@Pattern(EUR|RON|USD) moneda`.
-- **Responses:** `201 Created` (`{"facturaId": "UUID", "status": "Inregistrata"}`).
+```mermaid
+flowchart TD
+    REQ["Incoming HTTP Request"] --> FILTER["RbacSecurityFilter<br/>(Inspects X-User-Role & X-User-Id)"]
+    FILTER -->|Authorized| SEC_CTX["SecurityContextHolder Set"]
+    FILTER -->|Role Mismatch| HTTP_403["HTTP 403 Forbidden"]
 
-### 3.2 Execute 3-Way Match Reconciliation
-- **Method & URI:** `POST /api/facturi/{id}/reconciliere`
-- **Responses:**
-  - `200 OK`: `{"status": "SUCCESS", "message": "Reconcilierea a fost executata"}`
-  - `409 Conflict`: Discrepancy exceeds tolerance ($\pm 2\%$) or NIR missing (`status: BLOCATA_DISCREPANTE`).
+    SEC_CTX --> CONTENT["ContentNegotiationConfigurer<br/>(JSON or XML Deserializer)"]
+    CONTENT --> VALID["JSR-380 Validator (@Valid DTO)"]
+    VALID -->|Validation Error| HTTP_400["HTTP 400 Bad Request<br/>(GlobalExceptionHandler RFC 7807)"]
 
-### 3.3 Create Payment Order
-- **Method & URI:** `POST /api/facturi/{id}/ordine-plata`
-- **Request DTO:** [CreeazaOrdinPlataRequest.java](file:///c:/Users/bmugu/Desktop/app/src/main/java/ro/uaic/feaa/sdbis/supplychain/facturi/presentation/CreeazaOrdinPlataRequest.java)
-- **Validation Rules:** `@Positive suma`, `@Pattern(EUR|RON|USD) moneda`, `@NotNull creatDe`.
-- **Responses:** `201 Created` with generated `ordinId`.
-
-### 3.4 Cryptographic Stripe Bank Webhook Callback
-- **Method & URI:** `POST /api/ordine-plata/webhook-banca`, `POST /api/plati/webhook-banca`
-- **Headers:** `Stripe-Signature` (Mandatory; HMAC-SHA256 signature with timestamp).
-- **Request Body:** Raw JSON Stripe payload (`payment_intent.succeeded` or `payment_intent.payment_failed`).
-- **Validation Rules:** Cryptographic verification via `Webhook.constructEvent(payload, sigHeader, secret, 300)`.
-- **Responses:**
-  - `200 OK`: `{"ordinId": "UUID", "status": "Executat"}` (or `status: RespinsDeBanca`).
-  - `400 Bad Request`: Missing signature, invalid signature, or expired timestamp.
-- **Audit Logging:** Every attempt is recorded in `shared_audit_log`.
-
+    VALID -->|Valid| CTRL["Controller Handler Method"]
+    CTRL --> APP["Application Service (@Transactional)"]
+    APP --> DOM["Aggregate Root Invariant Guard"]
+    DOM -->|Business Rule Breach| HTTP_422["HTTP 422 Unprocessable Entity"]
+    DOM -->|Success| DB[("PostgreSQL Commit")]
+    DB --> OUTBOX[("shared_outbox_events")]
+    OUTBOX --> RESP["HTTP 200 OK / 201 Created"]
+```
